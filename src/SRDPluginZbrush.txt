@@ -1,0 +1,285 @@
+// *************************************************************************************************
+// SRDPluginZbrush.txt
+// *************************************************************************************************
+
+// =================================================================================================
+// VARIABLES
+// =================================================================================================
+
+// Script内グローバル変数（prefix:g）
+[VarDef, gIsMac, 0]                 // do we have a Mac or PC
+[VarDef, gZvers, 0]                 // ZBrush version
+[VarDef, gDllPathFileUtils, ""]     // plugin DLL path
+[VarDef, gDllVersionFileUtils, 0]   // plugin DLL version
+[VarDef, gIsBootViewer, 0]          // status of viewer
+[VarDef, gIsSystemErr, 0]           // result of system chek
+
+// MemoryBlock内変数（prefix:MB_）
+[If, 0 < [MemGetSize, MB_IsBootViewer],
+    // MB確保済みなので復元（スクリプト再読み込み時）
+    [MemRead, MB_IsBootViewer, gIsBootViewer]
+, // else
+    // MB未確保なので確保（ZBrush起動後の初回スクリプト実行時）
+    [MemCreate, MB_IsBootViewer, 1, 0]  // 1Byte, 0初期化
+]
+    
+// ユーティリティ系の処理をインポート
+<zscriptinsert, "SRDPluginUtil.txt">
+
+
+// =================================================================================================
+// ROUTINES
+// =================================================================================================
+
+// ZFileUtils DLL/LIB
+[RoutineDef, CheckSystemForZFileUtils,
+    // check Mac or PC
+    [VarSet, gIsMac, [ZBrushInfo,6]]
+    // Make sure we have the dll and set its path
+    [If, [ZBrushInfo, 16] == 64,    // 64 bit
+        [If, gIsMac,
+            // Use "ZFileUtils.lib"
+            [VarSet, gDllPathFileUtils, "SRDPluginZbrush/ZFileUtilsData/ZFileUtils.lib"]
+            , // else
+            // Use "ZFileUtils64.dll"
+            [VarSet, gDllPathFileUtils, "SRDPluginZbrush\ZFileUtilsData\ZFileUtils64.dll"]
+        ]
+    , // else 32 bit - no longer supported
+        [RoutineCall, NoticeError, "This zscript is not designed for this version of ZBrush."]
+        [Exit]
+    ]
+
+    [If, [FileExists, [Var, gDllPathFileUtils]],
+        // check that correct version
+        [VarSet, gDllVersionFileUtils, [FileExecute, [Var, gDllPathFileUtils], Version]]
+        [If, [Val, gDllVersionFileUtils] >= 8.0,  // dll version
+            // OK
+        , // else earlier version
+            [RoutineCall, NoticeError, "The ZFileUtils plugin DLL is an earlier version which does not support this plugin.  Please install correct version."]
+            [Exit]
+        ]
+    , // else no DLL.
+        [RoutineCall, NoticeError, "The ZFileUtils plugin DLL could not be found at the correct location.  Please re-install the plugin, making sure the relevant files and folders are in the ZStartup/ZPlugs64/SRDPluginZbrush/ZFileUtilsData folder."]
+        [Exit]
+    ]
+
+    // [Note, "@@@ CheckSystemForZFileUtils -E", , 1]
+] // end routine
+
+// The CheckSystem routine is a standard routine to make sure everything is as it should be. 
+// Call it whenever the plugin is reloaded.
+[RoutineDef, CheckSystem,
+    // check ZBrush version
+    [VarSet, gZvers, [ZBrushInfo, 0]]
+    [If, [Val, gZvers] >= 2021.0, ,
+        [RoutineCall, NoticeError, "This zscript is not designed for this version of ZBrush."]
+        [Exit]
+    ]
+
+    // ZFileUtils DLL/LIB
+    [RoutineCall, CheckSystemForZFileUtils]
+] // end routine
+
+// call routine here to ensure it's called every time plugin loaded
+[RoutineCall, CheckSystem]
+
+// SRDアプリ（CL/SV）を終了
+[RoutineDef, ShutdownViewer,
+    [ShellExecute, "TASKKILL /F /IM SRDClient.exe"]
+    [ShellExecute, "TASKKILL /IM SRDViewer.exe"]
+] // end routine
+
+// SRDViewer(SV)起動状態によってボタンの状態を更新
+[RoutineDef, ChangeButtonAppearence,
+    [If, isViewerState == 1,
+        // 【Viewer起動状態の場合】
+        // 連動するボタンの外観を変更
+        [IEnable, "SRDViewer:Control:Shutdown"]
+        [IEnable, "SRDViewer:for OBJ:Load Scene"]
+        [IEnable, "SRDViewer:for OBJ:Load RealScale"]
+    , // else
+        // 【Viewer停止状態の場合】
+        // 連動するボタンの外観を変更
+        [IDisable, "SRDViewer:Control:Shutdown"]
+        [IEnable, "SRDViewer:for OBJ:Load Scene"]
+        [IEnable, "SRDViewer:for OBJ:Load RealScale"]
+    ]
+, isViewerState    // arg
+] // end routine
+
+
+// =================================================================================================
+// INIT
+// =================================================================================================
+
+// Initialize
+[RoutineDef, Initialize,
+    // NOP
+] // end routine
+
+// call routine here to ensure it's called every time plugin loaded
+[RoutineCall, Initialize]
+
+// InitializeUI
+[RoutineDef, InitializeUI,
+    // ボタンUIの表示更新
+    [RoutineCall, ChangeButtonAppearence, gIsBootViewer]
+] // end routine
+
+
+// =================================================================================================
+// UI & Event
+// =================================================================================================
+
+// パレット（プラグインの入り口）
+[IPalette, "SRDViewer"]    // ツールバーに新規パレットを追加。
+
+// --------------------------------------------------
+// for OBJ
+// --------------------------------------------------
+[ISubPalette, "SRDViewer:for OBJ", 2]
+
+// Loadボタン
+[IButton, "SRDViewer:for OBJ:Load Scene", "Export data to OBJ file and load it.",
+    [IShowActions, 0]
+
+    // exportフォルダを作成（ひとまとめにしておき後工程でClientがTempへ移動させる）
+    [VarSet, exportDir, "C:\Users\Public\SRD\bin\export"]
+    [VarSet, err, [FileExecute, [Var, gDllPathFileUtils], "MakeFolder", #exportDir]]	
+
+    // Expot時のオプション変更(Txr無効)
+    [IUnPress, Preferences:ImportExport:Txr]
+
+    // 空シーンチェック
+    [RoutineCall, CheckIsPolymesh3D]
+    [If, gIsPolyMesh3D == 1,
+        // 【選択SubToolがPolyMesh3Dの場合】
+
+        // ポリゴン数チェック
+        [VarSet, getVal, -1]
+        [Mesh3DGet, 1, , , getVal]
+        [If, getVal >= 10000000,
+            // 【ポリゴン数が閾値外の場合】
+            [RoutineCall, NoticeWarning, "The mesh is currently too dense and may take a long time to display.", 0]
+        ]
+
+        // OBJファイルを作成する
+        // [VarSet, fileName, [StrMerge, exportDir, "\", "Zbrush.obj"]]
+        [VarSet, fileName, [StrMerge, exportDir, "\", "1qaz3edc5tgb7ujm9ol.obj"]]
+
+        // ファイルチェック
+        [If, [FileExists, [Var, fileName]],
+            // 【残っている場合は明示的に削除する】
+            // Delete this file...
+            [VarSet, err, [FileExecute, [Var, gDllPathFileUtils], "FileDelete", #fileName]]
+            // [If, err, [Note, "An error occurred.", , 2], [Note, "File deleted", , 2]]
+        ]
+
+        [FileNameSetNext, fileName]
+        [IPress, "Tool:Export"]
+
+        // 実行コマンドの作成
+        // [VarSet, cmd, "start /min C:\Users\Public\SRD\bin\SRDClient.exe "]
+        // [VarSet, cmd, "cd C:\Program Files\Sony\SpatialRealityDisplayPluginZbr\viewer && start SRDClient.exe "]
+        [VarSet, cmd, "start C:\PROGRA~1\Sony\SpatialRealityDisplayPluginZbr\viewer\SRDClient.exe "]
+
+        // [VarSet, opt, " --dccZbrush --console"]
+        [VarSet, opt, " --dccZbrush"]
+
+        [VarSet, makeCmd, [StrMerge, cmd, fileName, opt]]
+
+        // SRDアプリ（CL）を起動する。
+        [ShellExecute, "TASKKILL /F /IM SRDClient.exe"]
+        [ShellExecute, makeCmd]
+    , // else
+        // 【選択SubToolがPolyMesh3Dではない場合】
+        [RoutineCall, NoticeWarning, "The selection target is not in \Cff9923PolyMesh3D \Cc0c0c0format.", 3]
+    ]
+
+    // Viewer起動状態フラグ更新
+    [MemWrite, MB_IsBootViewer, 1]
+    [VarSet, gIsBootViewer, 1] 
+    [RoutineCall, ChangeButtonAppearence, gIsBootViewer]
+
+    [IShowActions, 1]
+, 1
+, 1
+] // end button
+
+[IButton, "SRDViewer:for OBJ:Load RealScale", "Load OBJ file(from ScaleMaster).",
+    [IShowActions, 0]
+
+    // デフォルトpath設定
+    // [FileExecute, [Var, gDllPathFileUtils], SetDefaultFolder, "C:\Users\Public\SRD\bin"]
+    
+    // ファイル選択ダイアログを表示
+    [VarDef, dialogTitle, "Please select some files"]
+    [VarSet, fileExt, "obj,fbx"]
+    [MemCreate, ZFileUTils_FileExt, 256, 0] 
+    [MemWriteString, ZFileUTils_FileExt, fileExt, 0]
+    // create and launch Open File dialog, returns the number of files selected
+    [VarSet, fileCount, [FileExecute, [Var, gDllPathFileUtils], "GetFilesDialog", #dialogTitle, , ZFileUTils_FileExt]]
+    [MemDelete, ZFileUTils_FileExt]
+
+    // 指定ファイルのpathを取得
+    [If, fileCount > 0,
+        // Create a memblock to get the file path
+        [MemCreate, Test_ZFileUTils, 256, 0] 
+        [VarSet, index, 1]
+        [VarSet, err, [FileExecute, [Var, gDllPathFileUtils], GetFilePath, , index, Test_ZFileUTils]]
+        // if all is OK copy from memblock to variable
+        [If, err == 0,
+            // ファイルpathを取得
+            [VarDef, fileName, ""]
+            [MemReadString, Test_ZFileUTils, fileName]
+
+            // 実行コマンドの作成
+            // [VarSet, cmd, "start /min C:\Users\Public\SRD\bin\SRDClient.exe "]
+            // [VarSet, cmd, "cd C:\Program Files\Sony\SpatialRealityDisplayPluginZbr\viewer && start SRDClient.exe "]
+            [VarSet, cmd, "start C:\PROGRA~1\Sony\SpatialRealityDisplayPluginZbr\viewer\SRDClient.exe "]
+
+            // [VarSet, opt, " --dccZbrush --realScale --console"]
+            [VarSet, opt, " --dccZbrush --realScale"]
+
+            [VarSet, makeCmd, [StrMerge, cmd, fileName, opt]]
+
+            // SRDアプリ（CL）を起動する。
+            [ShellExecute, "TASKKILL /F /IM SRDClient.exe"]
+            [ShellExecute, makeCmd]
+        ]
+        [MemDelete, Test_ZFileUTils]
+    ]
+
+    // Viewer起動状態フラグ更新
+    [MemWrite, MB_IsBootViewer, 1]
+    [VarSet, gIsBootViewer, 1] 
+    [RoutineCall, ChangeButtonAppearence, gIsBootViewer]
+
+    [IShowActions, 1]
+, 0
+, 1
+] // end button
+
+// --------------------------------------------------
+// Control App
+// --------------------------------------------------
+[ISubPalette, "SRDViewer:Control", 2]      // 「titleMode = 2:Hide Title」によりボタンを常時表示
+
+// Shutdown
+[IButton, "SRDViewer:Control:Shutdown", "Finish the SRDViewer app.",
+    [IShowActions, 0]
+
+    [RoutineCall, ShutdownViewer]
+
+    // Viewer起動状態フラグ更新
+    [MemWrite, MB_IsBootViewer, 0]
+    [VarSet, gIsBootViewer, 0] 
+    [RoutineCall, ChangeButtonAppearence, gIsBootViewer]
+
+    [IShowActions, 1]
+, 1
+, 1
+] // end button
+
+// ボタンUIの表示初期化
+[RoutineCall, InitializeUI]

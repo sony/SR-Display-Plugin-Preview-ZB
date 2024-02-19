@@ -1,0 +1,69 @@
+// *************************************************************************************************
+// SRDPluginUtil.txt
+// *************************************************************************************************
+
+// =================================================================================================
+// VARIABLES
+// =================================================================================================
+
+// Script内グローバル変数（prefix:g）
+[VarDef, gIsPolyMesh3D, 0]      // Whether Subtool is PolyMesh3D.
+[VarDef, gIsMergeable, 0]       // Whether sub tools can be merged.
+
+// =================================================================================================
+// ROUTINES
+// =================================================================================================
+
+// Error
+[RoutineDef, NoticeError,
+    [VarSet, dispMsg, [StrMerge, "[Err] ", msg]]
+    [MessageOK, dispMsg]
+, msg    // arg
+] // end routine
+
+// Warning
+[RoutineDef, NoticeWarning,
+    [VarSet, dispMsg, [StrMerge, "[Warn] ", msg]]
+    [Note, dispMsg, , duration]
+, msg       // arg
+, duration  // arg
+] // end routine
+
+// Info
+[RoutineDef, NoticeInfo,
+    [VarSet, dispMsg, [StrMerge, "[Info] ", msg]]
+    [Note, dispMsg, , duration]
+, msg       // arg
+, duration  // arg
+] // end routine
+
+// 空シーンチェック
+//   return false: for primitives, ZSphere, ZSphere in adaptive skin preview!
+//   return true : PolyMesh3D (star )
+[RoutineDef, CheckIsPolymesh3D,
+    [VarSet, gIsPolyMesh3D, 0]
+    [If, [IExists, "Tool:Geometry HD"],
+        [If, [IsEnabled, "Tool:Geometry HD"],
+            // 【「Tool:Geometry HD」が有効の場合】
+            [VarSet, gIsPolyMesh3D, 1]
+            // hack: bug: a ZSphere + 'A' + clone -> "Tool:Geometry HD" is enabled !!!!!
+            [If, [IExists, Tool:Rigging],
+                // 「Tool:Rigging」が表示されている場合はPolyMesh3Dではない
+                [VarSet, gIsPolyMesh3D, 0]
+            ]
+        ]
+    ]
+]
+
+// サブツール結合チェック
+//   return false: 「結合」不可能
+//   return true : 「結合」可能
+[RoutineDef, CheckIsMergeable,
+    [VarSet, gIsMergeable, 0]
+    [If, [IExists, "Tool:SubTool:MergeDown"],
+        [If, [IsEnabled, "Tool:SubTool:MergeDown"],
+            // 【「Tool:SubTool:MergeDown」が有効の場合】
+            [VarSet, gIsMergeable, 1]
+        ]
+    ]
+]
