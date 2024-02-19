@@ -1,7 +1,3 @@
-
-
-# SRDisplayPluginViewer 
-
 ## Spatial Reality Display Plugin for Preview(ZB)
 
  The Spatial Reality Display Plugin for Preview app enables you to transfer and display 3DCG data created with DCC tool.
@@ -33,9 +29,9 @@ Please see overview page
 1. Launch ZBrush.
 2. Press the Load ZScript button to load a new ZScript into the ZScript window.
 3. Select SRDPluginZbrush.txt (put SRDPluginUtil.txt in the same folder) and SRDPluginZbrush.zsc is automatically generated.
-4. Replace generated SRDPluginZbrush.zsc file with the file that already exist "C:\Program Files\Maxon ZBrush XXXX\ZStartup\ZPlugs64" (XXXX is ZBrush version.)
+4. Replace generated SRDPluginZbrush.zsc file with the file that already exists in "C:\Program Files\Maxon ZBrush XXXX\ZStartup\ZPlugs64" (XXXX is ZBrush version.)
 
-Reference Guild about ZBrush Plugin
+Reference Guide about ZBrush Plugin
 
 - [Zscript english page](https://docs.pixologic.com/reference-guide/zscript/)
 
